@@ -552,8 +552,11 @@
       });
 
       ui.reveal.addEventListener("click", reveal);
-      ui.check.addEventListener("click", checkAnswer);
-      ui.next.addEventListener("click", startRound);
+      ui.check.addEventListener("mousedown", (e) => {
+        e.preventDefault();
+        checkAnswer();
+      }),
+        ui.next.addEventListener("click", startRound);
       ui.answer.addEventListener("keydown", (e) => {
         if (e.key === "Enter") checkAnswer();
       });
