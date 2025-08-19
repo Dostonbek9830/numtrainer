@@ -93,10 +93,6 @@
   <body>
     <div class="card">
       <h1>Number Listening Trainer</h1>
-      <div class="sub">
-        Tilni tanla, diapazonni belgila, “Play” bos — sonni eshit va raqam
-        holida kirgiz. 🔊
-      </div>
 
       <div class="row">
         <div>
@@ -112,7 +108,7 @@
         </div>
         <div>
           <label>Maksimal</label><br />
-          <input id="max" type="number" value="99999" />
+          <input id="max" type="number" value="999999999" />
         </div>
         <div>
           <label>Tezlik (1.0 = normal)</label><br />
@@ -135,6 +131,9 @@
             <option value="4">4 digits</option>
             <option value="5">5 digits</option>
             <option value="6">6 digits</option>
+            <option value="7">7 digits</option>
+            <option value="8">8 digits</option>
+            <option value="9">9 digits</option>
           </select>
         </div>
       </div>
@@ -167,12 +166,6 @@
           🎲 So‘nggi son: <span id="last">—</span>
         </div>
       </div>
-
-      <div class="footer">
-        Qo‘llab-quvvatlanadigan diapazon: 0…999,999 (milliongacha kengaytirish
-        oson). Brauzeringda <b>Speech Synthesis</b> bo‘lishi kerak
-        (Chrome/Edge/Safari).
-      </div>
     </div>
 
     <script>
@@ -201,7 +194,7 @@
         window.speechSynthesis.speak(u);
       }
 
-      // ======= English number to words (0..999,999) =======
+      // ======= English number to words (0..999,999,999) =======
       const EN_ONES = [
         "zero",
         "one",
@@ -258,11 +251,16 @@
         return parts.join(" ");
       }
       function englishWords(n) {
-        // 0..999999
+        // 0..999,999,999
         if (n === 0) return "zero";
-        const thousands = Math.floor(n / 1000);
+        const millions = Math.floor(n / 1000000); // 1,000,000s
+        const thousands = Math.floor((n % 1000000) / 1000); // 1,000s
         const rest = n % 1000;
+
         let out = [];
+        if (millions) {
+          out.push(enChunk(millions) + " million");
+        }
         if (thousands) {
           out.push(enChunk(thousands) + " thousand");
         }
@@ -272,7 +270,7 @@
         return out.join(" ").replace(/\s+/g, " ").trim();
       }
 
-      // ======= Russian number to words (0..999,999) =======
+      // ======= Russian number to words (0..999,999,999) =======
       // Gender: 0=masc, 1=fem (needed for 1/2 forms: один/одна, два/две)
       const RU_ONES = {
         0: [
@@ -366,16 +364,28 @@
         return parts.join(" ");
       }
       function russianWords(n) {
-        // 0..999999
+        // 0..999,999,999
         if (n === 0) return "ноль";
-        const thousands = Math.floor(n / 1000);
+        const millions = Math.floor(n / 1000000);
+        const thousands = Math.floor((n % 1000000) / 1000);
         const rest = n % 1000;
+
         let out = [];
+        if (millions) {
+          const milText = ruChunk(millions, 0); // million is masculine
+          const milForm = ruPlural(
+            millions,
+            "миллион",
+            "миллиона",
+            "миллионов"
+          );
+          out.push(milText + " " + milForm);
+        }
         if (thousands) {
           // thousands chunk uses feminine for ones (e.g., "две тысячи")
           const thText = ruChunk(thousands, 1);
-          const form = ruPlural(thousands, "тысяча", "тысячи", "тысяч");
-          out.push(thText + " " + form);
+          const thForm = ruPlural(thousands, "тысяча", "тысячи", "тысяч");
+          out.push(thText + " " + thForm);
         }
         if (rest) {
           out.push(ruChunk(rest, 0)); // rest is masculine by default
@@ -422,9 +432,9 @@
 
       function clampRange() {
         let min = parseInt(ui.min.value || "0", 10);
-        let max = parseInt(ui.max.value || "99999", 10);
+        let max = parseInt(ui.max.value || "999999999", 10);
         if (isNaN(min)) min = 0;
-        if (isNaN(max)) max = 99999;
+        if (isNaN(max)) max = 999999999;
         if (max < min) [min, max] = [max, min];
         ui.min.value = min;
         ui.max.value = max;
@@ -454,7 +464,7 @@
         if (target === null) return;
         const langCode = ui.lang.value;
         const rate = parseFloat(ui.rate.value || "1.0");
-        const ttsLang = langCode === "en" ? "en-GB" : "ru-RU";
+        const ttsLang = langCode === "en" ? "en-US" : "ru-RU";
         const text = numberToWords(target, langCode);
         lastSpokenText = text;
         speak(text, ttsLang, rate);
@@ -477,18 +487,26 @@
         ui.answer.focus();
         setStatus("Eshitib, raqamni kiriting…");
       }
-
       function checkAnswer() {
         if (target === null) return;
-        const raw = ui.answer.value.trim().replace(/\s+/g, "");
+
+        // inputni tozalash (bo'sh joy va vergullarni olib tashlaymiz)
+        const raw = ui.answer.value
+          .trim()
+          .replace(/\s+/g, "")
+          .replace(/,/g, "");
+
         if (!raw) return;
-        // faqat raqam
+
+        // faqat raqam (vergul olib tashlangandan keyin)
         if (!/^\d+$/.test(raw)) {
           setStatus("Faqat raqam kiriting (0-9).", "bad");
           return;
         }
+
         const guess = parseInt(raw, 10);
         const correct = guess === target;
+
         if (correct) {
           ok++;
           streak++;
@@ -502,10 +520,21 @@
           ui.streak.textContent = streak;
           setStatus(`Xato. To‘g‘risi: ${target}.`, "bad");
         }
+
         ui.check.disabled = true;
         ui.next.disabled = false;
         ui.answer.blur();
       }
+
+      const input = document.getElementById("answer");
+
+      input.addEventListener("input", function () {
+        // raqam bo‘lmagan belgilarni o‘chiradi
+        let value = this.value.replace(/[^0-9]/g, "");
+
+        // mingliklarga vergul qo‘yadi
+        this.value = value.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+      });
 
       function reveal() {
         if (target === null) return;
