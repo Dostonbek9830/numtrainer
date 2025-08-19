@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+  <meta charset="UTF-8" />
+  <title>Number Listening Trainer (EN / RU)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root { font-family: system-ui, Arial, sans-serif; line-height: 1.4; }
+    body { margin: 24px; }
+    .card { max-width: 780px; margin: 0 auto; padding: 20px; border: 1px solid #ddd; border-radius: 12px; }
+    h1 { margin: 0 0 8px; font-size: 24px; }
+    .sub { color: #555; margin-bottom: 18px; }
+    .row { display: flex; gap: 12px; flex-wrap: wrap; margin: 8px 0; }
+    label { font-size: 14px; color: #333; }
+    input[type="number"], select, input[type="text"] {
+      padding: 10px 12px; border: 1px solid #ccc; border-radius: 10px; font-size: 16px;
+    }
+    button {
+      padding: 10px 14px; border: 0; border-radius: 10px; cursor: pointer; font-size: 16px;
+    }
+    button.primary { background: #1a73e8; color: #fff; }
+    button.ghost { background: #eee; }
+    .input-wrap { display: flex; gap: 10px; align-items: center; }
+    .big { font-size: 22px; font-weight: 600; }
+    .pill { display: inline-block; padding: 6px 10px; border-radius: 999px; background: #f5f5f5; }
+    .ok { color: #0a8f3c; }
+    .bad { color: #b00020; }
+    .muted { color: #666; }
+    .footer { margin-top: 18px; font-size: 13px; color: #666; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Number Listening Trainer</h1>
+    <div class="sub">Tilni tanla, diapazonni belgila, “Play” bos — sonni eshit va raqam holida kirgiz. 🔊</div>
+
+    <div class="row">
+      <div>
+        <label>Til / Language</label><br />
+        <select id="lang">
+          <option value="en">English (US)</option>
+          <option value="ru">Русский</option>
+        </select>
+      </div>
+      <div>
+        <label>Minimal</label><br />
+        <input id="min" type="number" value="0" />
+      </div>
+      <div>
+        <label>Maksimal</label><br />
+        <input id="max" type="number" value="99999" />
+      </div>
+      <div>
+        <label>Tezlik (1.0 = normal)</label><br />
+        <input id="rate" type="number" value="1.0" step="0.1" min="0.5" max="1.5" />
+      </div>
+      <div>
+        <label>Raqam uzunligi (ixtiyoriy)</label><br />
+        <select id="digits">
+          <option value="">— ixtiyoriy —</option>
+          <option value="1">1 digit</option>
+          <option value="2">2 digits</option>
+          <option value="3">3 digits</option>
+          <option value="4">4 digits</option>
+          <option value="5">5 digits</option>
+          <option value="6">6 digits</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="row">
+      <button class="primary" id="play">▶️ Play</button>
+      <button class="ghost" id="repeat" disabled>🔁 Qayta tinglash</button>
+      <button class="ghost" id="reveal" disabled>👀 Javobni ko‘rish</button>
+      <span id="status" class="pill muted">Hali boshlanmadi</span>
+    </div>
+
+    <div class="row input-wrap">
+      <label for="answer" class="big">Javobing:</label>
+      <input id="answer" type="text" placeholder="Masalan: 532" />
+      <button class="primary" id="check" disabled>Tekshirish</button>
+      <button class="ghost" id="next" disabled>Keyingisi ⏭️</button>
+    </div>
+
+    <div class="row">
+      <div class="pill">🎯 To‘g‘ri: <span id="correct">0</span></div>
+      <div class="pill">❌ Xato: <span id="wrong">0</span></div>
+      <div class="pill">🔥 Streak: <span id="streak">0</span></div>
+      <div class="pill">🎲 So‘nggi son: <span id="last">—</span></div>
+    </div>
+
+    <div class="footer">
+      Qo‘llab-quvvatlanadigan diapazon: 0…999,999 (milliongacha kengaytirish oson). Brauzeringda <b>Speech Synthesis</b> bo‘lishi kerak (Chrome/Edge/Safari).
+    </div>
+  </div>
+
+  <script>
+    // ======= Speech Synthesis helper =======
+    let voices = [];
+    function loadVoices() {
+      voices = window.speechSynthesis.getVoices();
+    }
+    loadVoices();
+    window.speechSynthesis.onvoiceschanged = loadVoices;
+
+    function speak(text, lang = 'en-US', rate = 1.0) {
+      if (!('speechSynthesis' in window)) {
+        alert('Speech Synthesis brauzeringizda mavjud emas.');
+        return;
+      }
+      const u = new SpeechSynthesisUtterance(text);
+      u.lang = lang;
+      u.rate = rate;
+      // Voice tanlash (mos tilga yaqinini olish)
+      const v = voices.find(v => v.lang.toLowerCase().startsWith(lang.toLowerCase()));
+      if (v) u.voice = v;
+      window.speechSynthesis.cancel(); // oldingi navbatni tozalash
+      window.speechSynthesis.speak(u);
+    }
+
+    // ======= English number to words (0..999,999) =======
+    const EN_ONES = ["zero","one","two","three","four","five","six","seven","eight","nine"];
+    const EN_TEENS = ["ten","eleven","twelve","thirteen","fourteen","fifteen","sixteen","seventeen","eighteen","nineteen"];
+    const EN_TENS = ["","","twenty","thirty","forty","fifty","sixty","seventy","eighty","ninety"];
+
+    function enChunk(n){ // 0..999
+      let parts = [];
+      const hundreds = Math.floor(n/100);
+      const rest = n%100;
+      if(hundreds) parts.push(EN_ONES[hundreds] + " hundred");
+      if(rest){
+        if(rest < 10) parts.push(EN_ONES[rest]);
+        else if(rest < 20) parts.push(EN_TEENS[rest-10]);
+        else {
+          const t = Math.floor(rest/10), o = rest%10;
+          parts.push(EN_TENS[t] + (o? "-" + EN_ONES[o]:""));
+        }
+      }
+      if(parts.length===0) return "zero";
+      return parts.join(" ");
+    }
+    function englishWords(n){ // 0..999999
+      if(n===0) return "zero";
+      const thousands = Math.floor(n/1000);
+      const rest = n%1000;
+      let out = [];
+      if(thousands){
+        out.push(enChunk(thousands) + " thousand");
+      }
+      if(rest){
+        out.push(enChunk(rest));
+      }
+      return out.join(" ").replace(/\s+/g,' ').trim();
+    }
+
+    // ======= Russian number to words (0..999,999) =======
+    // Gender: 0=masc, 1=fem (needed for 1/2 forms: один/одна, два/две)
+    const RU_ONES = {
+      0: ["ноль","один","два","три","четыре","пять","шесть","семь","восемь","девять"],
+      1: ["ноль","одна","две","три","четыре","пять","шесть","семь","восемь","девять"]
+    };
+    const RU_TEENS = ["десять","одиннадцать","двенадцать","тринадцать","четырнадцать","пятнадцать","шестнадцать","семнадцать","восемнадцать","девятнадцать"];
+    const RU_TENS = ["","", "двадцать","тридцать","сорок","пятьдесят","шестьдесят","семьдесят","восемьдесят","девяносто"];
+    const RU_HUNDS = ["","сто","двести","триста","четыреста","пятьсот","шестьсот","семьсот","восемьсот","девятьсот"];
+
+    function ruPlural(n, one, few, many){
+      // 1 -> one; 2-4 -> few; 5-20 -> many; 21->one ...
+      const n10 = n % 10, n100 = n % 100;
+      if (n10 === 1 && n100 !== 11) return one;
+      if (n10 >= 2 && n10 <= 4 && (n100 < 12 || n100 > 14)) return few;
+      return many;
+    }
+    function ruChunk(n, gender=0){ // 0..999
+      let parts = [];
+      const h = Math.floor(n/100);
+      const rest = n%100;
+      if(h) parts.push(RU_HUNDS[h]);
+      if(rest){
+        if(rest < 10){
+          parts.push(RU_ONES[gender][rest]);
+        } else if(rest < 20){
+          parts.push(RU_TEENS[rest-10]);
+        } else {
+          const t = Math.floor(rest/10), o = rest%10;
+          parts.push(RU_TENS[t] + (o? (" " + RU_ONES[gender][o]) : ""));
+        }
+      }
+      if(parts.length===0) return "ноль";
+      return parts.join(" ");
+    }
+    function russianWords(n){ // 0..999999
+      if(n===0) return "ноль";
+      const thousands = Math.floor(n/1000);
+      const rest = n%1000;
+      let out = [];
+      if(thousands){
+        // thousands chunk uses feminine for ones (e.g., "две тысячи")
+        const thText = ruChunk(thousands, 1);
+        const form = ruPlural(thousands, "тысяча","тысячи","тысяч");
+        out.push(thText + " " + form);
+      }
+      if(rest){
+        out.push(ruChunk(rest, 0)); // rest is masculine by default
+      }
+      return out.join(" ").replace(/\s+/g,' ').trim();
+    }
+
+    // ======= Game state =======
+    let target = null;
+    let lastSpokenText = "";
+    let ok = 0, bad = 0, streak = 0;
+
+    const $ = id => document.getElementById(id);
+    const ui = {
+      lang: $("lang"), min: $("min"), max: $("max"), rate: $("rate"), digits: $("digits"),
+      play: $("play"), repeat: $("repeat"), reveal: $("reveal"),
+      answer: $("answer"), check: $("check"), next: $("next"),
+      status: $("status"), correct: $("correct"), wrong: $("wrong"), streak: $("streak"), last: $("last")
+    };
+
+    function randInt(min, max){
+      return Math.floor(Math.random() * (max - min + 1)) + min;
+    }
+
+    function randByDigits(d){
+      const start = (d===1)?0:Math.pow(10, d-1);
+      const end = Math.pow(10, d) - 1;
+      return randInt(start, end);
+    }
+
+    function clampRange(){
+      let min = parseInt(ui.min.value || "0", 10);
+      let max = parseInt(ui.max.value || "99999", 10);
+      if (isNaN(min)) min = 0;
+      if (isNaN(max)) max = 99999;
+      if (max < min) [min, max] = [max, min];
+      ui.min.value = min;
+      ui.max.value = max;
+      return {min, max};
+    }
+
+    function generateNumber(){
+      const digitsVal = ui.digits.value ? parseInt(ui.digits.value,10) : null;
+      if (digitsVal) {
+        target = randByDigits(digitsVal);
+      } else {
+        const {min, max} = clampRange();
+        target = randInt(min, max);
+      }
+      ui.last.textContent = target;
+    }
+
+    function numberToWords(n, langCode){
+      if (langCode === 'en') return englishWords(n);
+      if (langCode === 'ru') return russianWords(n);
+      return String(n);
+    }
+
+    function playCurrent(){
+      if (target === null) return;
+      const langCode = ui.lang.value;
+      const rate = parseFloat(ui.rate.value || "1.0");
+      const ttsLang = (langCode === 'en') ? 'en-US' : 'ru-RU';
+      const text = numberToWords(target, langCode);
+      lastSpokenText = text;
+      speak(text, ttsLang, rate);
+    }
+
+    function setStatus(msg, type="muted"){
+      ui.status.textContent = msg;
+      ui.status.className = "pill " + (type === "ok" ? "ok" : type === "bad" ? "bad" : "muted");
+    }
+
+    function startRound(){
+      generateNumber();
+      playCurrent();
+      ui.repeat.disabled = false;
+      ui.reveal.disabled = false;
+      ui.check.disabled = false;
+      ui.next.disabled = true;
+      ui.answer.value = "";
+      ui.answer.focus();
+      setStatus("Eshitib, raqamni kiriting…");
+    }
+
+    function checkAnswer(){
+      if (target === null) return;
+      const raw = ui.answer.value.trim().replace(/\s+/g,'');
+      if (!raw) return;
+      // faqat raqam
+      if (!/^\d+$/.test(raw)) {
+        setStatus("Faqat raqam kiriting (0-9).", "bad");
+        return;
+      }
+      const guess = parseInt(raw,10);
+      const correct = (guess === target);
+      if (correct){
+        ok++; streak++;
+        ui.correct.textContent = ok;
+        ui.streak.textContent = streak;
+        setStatus("To‘g‘ri! Ajoyib 👏", "ok");
+      } else {
+        bad++; streak = 0;
+        ui.wrong.textContent = bad;
+        ui.streak.textContent = streak;
+        setStatus(`Xato. To‘g‘risi: ${target}.`, "bad");
+      }
+      ui.check.disabled = true;
+      ui.next.disabled = false;
+      ui.answer.blur();
+    }
+
+    function reveal(){
+      if (target === null) return;
+      alert(`To‘g‘ri javob: ${target}\n\nMatn (ovozda aytilgani):\n${lastSpokenText}`);
+      setStatus(`Ko‘rildi: ${target}`, "muted");
+    }
+
+    // Events
+    ui.play.addEventListener("click", startRound);
+    ui.repeat.addEventListener("click", playCurrent);
+    ui.reveal.addEventListener("click", reveal);
+    ui.check.addEventListener("click", checkAnswer);
+    ui.next.addEventListener("click", startRound);
+    ui.answer.addEventListener("keydown", e => {
+      if (e.key === "Enter") checkAnswer();
+    });
+
+    // UX: range guard
+    ["min","max"].forEach(id => {
+      $(id).addEventListener("change", clampRange);
+    });
+
+    // Safety: stop speech on unload
+    window.addEventListener("beforeunload", () => window.speechSynthesis.cancel());
+  </script>
+</body>
+</html>
